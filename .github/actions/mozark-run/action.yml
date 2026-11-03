@@ -1,0 +1,132 @@
+name: Mozark run
+description: >-
+  Test a new app build on Mozark's real-device cloud with the scripts managed in a
+  Test Studio project. Uploads the build, packages the project's latest scripts,
+  runs them, and reports pass/fail, JUnit and a report link.
+
+inputs:
+  build-path:
+    description: Path to the new build (.apk, .ipa, .ipk, .wgt).
+    required: true
+  platform:
+    description: android | android-tv | ios | webos | tizen
+    required: true
+  project-id:
+    description: Test Studio project ID. Falls back to mozark.yml.
+    required: false
+  suite:
+    description: Comma-separated Studio tags to run (e.g. smoke). Falls back to mozark.yml per trigger.
+    required: false
+  test-case-ids:
+    description: Explicit Studio test-case IDs; overrides suite.
+    required: false
+  scripts-zip:
+    description: Last-resort manually exported scripts zip (package route only).
+    required: false
+  devices:
+    description: Comma-separated device serials. Falls back to mozark.yml.
+    required: false
+  device-group:
+    description: Device group (job runner trayId). Package route only.
+    required: false
+  app-version:
+    description: App version string recorded with the run.
+    required: false
+  timeout-minutes:
+    description: Hard timeout for the run.
+    required: false
+  route:
+    description: run-api (App Studio packages and submits) or package (export + codegen, then job runner).
+    default: run-api
+  config:
+    description: Path to mozark.yml.
+    default: mozark.yml
+  fetch-artifacts:
+    description: Download per-session Optics JUnit from session files.
+    default: "false"
+  mozark-token:
+    description: SSO bearer for App Studio. From secrets.
+    required: false
+  mozark-base-url:
+    description: App Studio API base URL (*.preprod.mozark.ai or *.dev.mozark.ai).
+    required: false
+  mozark-org-id:
+    description: Mozark org ID.
+    required: false
+  mozark-app-id:
+    description: Mozark app ID.
+    required: false
+  mock:
+    description: >-
+      auto | true | false. auto uses the built-in mock API when mozark-token is empty,
+      so forks and demos still show the whole pipeline.
+    default: auto
+  mock-scenario:
+    description: pass | fail | flaky-infra | auth | data | app (mock only).
+    default: pass
+
+outputs:
+  job-id:
+    description: Mozark job ID.
+    value: ${{ steps.run.outputs.job-id }}
+  verdict:
+    description: pass | fail | infra | timeout
+    value: ${{ steps.run.outputs.verdict }}
+  report-url:
+    description: Link to the Mozark report.
+    value: ${{ steps.run.outputs.report-url }}
+  failure-class:
+    description: Failure class when not passing.
+    value: ${{ steps.run.outputs.failure-class }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      shell: bash
+      run: python -m pip install --quiet -r "${{ github.action_path }}/requirements.txt"
+
+    - name: Start mock API (demo mode)
+      id: mock
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.mozark-token }}
+      run: |
+        if [[ "${{ inputs.mock }}" == "true" || ( "${{ inputs.mock }}" == "auto" && -z "$TOKEN" ) ]]; then
+          echo "::notice title=Mozark demo mode::No mozark-token, so this run uses the built-in mock API (scenario: ${{ inputs.mock-scenario }})."
+          python "${{ github.action_path }}/mock_api.py" --port 8765 --scenario "${{ inputs.mock-scenario }}" &
+          for _ in $(seq 1 20); do curl -s -o /dev/null http://127.0.0.1:8765/ && break; sleep 0.3; done
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run on Mozark
+      id: run
+      shell: bash
+      env:
+        INPUT_BUILD_PATH: ${{ inputs.build-path }}
+        INPUT_PLATFORM: ${{ inputs.platform }}
+        INPUT_PROJECT_ID: ${{ inputs.project-id }}
+        INPUT_SUITE: ${{ inputs.suite }}
+        INPUT_TEST_CASE_IDS: ${{ inputs.test-case-ids }}
+        INPUT_SCRIPTS_ZIP: ${{ inputs.scripts-zip }}
+        INPUT_DEVICES: ${{ inputs.devices }}
+        INPUT_DEVICE_GROUP: ${{ inputs.device-group }}
+        INPUT_APP_VERSION: ${{ inputs.app-version }}
+        INPUT_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        INPUT_ROUTE: ${{ inputs.route }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_FETCH_ARTIFACTS: ${{ inputs.fetch-artifacts }}
+        INPUT_RESULTS_DIR: results/${{ inputs.platform }}
+        MOZARK_TOKEN: ${{ steps.mock.outputs.enabled == 'true' && 'mock-token' || inputs.mozark-token }}
+        MOZARK_BASE_URL: ${{ steps.mock.outputs.enabled == 'true' && 'http://127.0.0.1:8765' || inputs.mozark-base-url }}
+        MOZARK_ORG_ID: ${{ steps.mock.outputs.enabled == 'true' && 'mock-org' || inputs.mozark-org-id }}
+        MOZARK_APP_ID: ${{ steps.mock.outputs.enabled == 'true' && 'mock-app' || inputs.mozark-app-id }}
+        MOZARK_MOCK: ${{ steps.mock.outputs.enabled == 'true' && '1' || '' }}
+        MOZARK_RETRY_DELAY: ${{ steps.mock.outputs.enabled == 'true' && '1' || '30' }}
+      run: python "${{ github.action_path }}/mozark_run.py"

@@ -1,0 +1,9 @@
+{
+  "id": "com.mozark.cidemo",
+  "version": "0.0.1",
+  "vendor": "Mozark CI Demo",
+  "type": "web",
+  "main": "index.html",
+  "title": "Mozark CI Demo",
+  "icon": "icon.png"
+}

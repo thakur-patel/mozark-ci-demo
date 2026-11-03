@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Shared TV web app for webOS and Tizen: home -> search -> results -> play.
+     Stable element ids for the Studio tests; arrow keys + Enter drive focus. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mozark CI Demo</title>
+<style>
+  body { font: 32px sans-serif; background: #111; color: #eee; margin: 60px; }
+  [hidden] { display: none; }
+  button, input, .item { font: inherit; padding: 12px 24px; margin: 12px 0; display: block; }
+  :focus { outline: 4px solid #4af; }
+</style>
+</head>
+<body>
+  <h1 id="screen_title">Home</h1>
+  <button id="open_search">Search</button>
+  <input id="search_input" placeholder="Search titles" hidden>
+  <button id="search_submit" hidden>Go</button>
+  <div id="result_item" class="item" tabindex="0" hidden></div>
+  <button id="play_button" hidden>Play</button>
+  <div id="player_status" hidden></div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const all = ["open_search", "search_input", "search_submit", "result_item", "play_button", "player_status"];
+  function show(screen, ...ids) {
+    $("screen_title").textContent = screen;
+    all.forEach((id) => ($(id).hidden = !ids.includes(id)));
+    $(ids[0]).focus();
+  }
+  $("open_search").onclick = () => show("Search", "search_input", "search_submit");
+  $("search_submit").onclick = () => {
+    $("result_item").textContent = ($("search_input").value || "Demo") + ": Episode 1";
+    show("Results", "result_item", "play_button");
+  };
+  $("play_button").onclick = () => {
+    $("player_status").textContent = "Playing: " + $("result_item").textContent;
+    show("Player", "player_status");
+  };
+  document.addEventListener("keydown", (e) => {
+    const visible = all.map($).filter((el) => !el.hidden);
+    const i = visible.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") visible[Math.min(i + 1, visible.length - 1)].focus();
+    if (e.key === "ArrowUp") visible[Math.max(i - 1, 0)].focus();
+    if (e.key === "Enter" && document.activeElement.id === "result_item") $("play_button").focus();
+    if (e.key === "Backspace" || e.keyCode === 461 /* webOS back */ || e.keyCode === 10009 /* Tizen back */) {
+      if (document.activeElement.tagName !== "INPUT") show("Home", "open_search");
+    }
+  });
+  show("Home", "open_search");
+</script>
+</body>
+</html>

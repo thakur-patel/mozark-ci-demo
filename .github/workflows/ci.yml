@@ -1,0 +1,56 @@
+# Checks for the Action itself: unit tests, plus the pipeline run end to end
+# against the mock API for each verdict, so exit codes stay honest.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r .github/actions/mozark-run/requirements.txt
+      - run: python -m unittest discover -s tests -v
+
+  pipeline-verdicts:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { scenario: pass, expect: pass }
+          - { scenario: fail, expect: fail }
+          - { scenario: flaky-infra, expect: pass }
+          - { scenario: auth, expect: infra }
+    name: verdict (${{ matrix.scenario }} -> ${{ matrix.expect }})
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p out && printf 'PK\003\004demo' > out/demo.apk
+      - name: Mozark run (mock)
+        id: mozark
+        continue-on-error: true
+        uses: ./.github/actions/mozark-run
+        with:
+          build-path: out/demo.apk
+          platform: android
+          mock: "true"
+          mock-scenario: ${{ matrix.scenario }}
+      - name: Check verdict
+        run: |
+          echo "verdict=${{ steps.mozark.outputs.verdict }} class=${{ steps.mozark.outputs.failure-class }}"
+          test "${{ steps.mozark.outputs.verdict }}" = "${{ matrix.expect }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verdict-${{ matrix.scenario }}
+          path: results/android

@@ -1,0 +1,32 @@
+# Mozark CI config: which Studio project, which tags, which devices.
+# Scripts live in Test Studio, not here. Only the project ID is in the repo.
+project-id: "00000000-0000-0000-0000-000000000000"   # Studio project ID (placeholder)
+
+# Studio tags to run per trigger. A test case runs if it has any listed tag.
+suites:
+  tag: [smoke]                 # push of a v* tag
+  release: [smoke, regression] # release published
+  dispatch: [smoke]            # manual run
+  default: [smoke]
+
+platforms:
+  android:
+    enabled: true
+    devices: ["ANDROID-SERIAL-1"]     # or device-group: <tray id>
+    timeout-minutes: 45
+    max-test-minutes: 10
+  android-tv:
+    enabled: true
+    devices: ["ANDROID-TV-SERIAL-1"]
+    timeout-minutes: 45
+  ios:
+    enabled: false                    # needs a macOS runner and a preprod iOS device
+    devices: ["IOS-UDID-1"]
+  webos:
+    enabled: true
+    devices: ["LG-WEBOS-SERIAL-1"]
+    timeout-minutes: 60
+  tizen:
+    enabled: true
+    devices: ["SAMSUNG-TIZEN-SERIAL-1"]
+    timeout-minutes: 60

@@ -1,0 +1,129 @@
+# Test on every build: each new app build triggers a Mozark run with the
+# scripts managed in Test Studio. Nobody opens the portal.
+name: Build and test on Mozark
+
+on:
+  push:
+    tags: ["v*"]          # tag -> smoke (see mozark.yml)
+  release:
+    types: [published]    # release -> smoke + regression
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Comma-separated platforms (empty = all enabled in mozark.yml)
+        default: ""
+      suite:
+        description: Studio tags to run (empty = mozark.yml for "dispatch")
+        default: ""
+      mock-scenario:
+        description: Demo mode only (no MOZARK_TOKEN secret)
+        type: choice
+        options: [pass, fail, flaky-infra, data, app, auth]
+        default: pass
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      platforms: ${{ steps.plan.outputs.platforms }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        env:
+          WANTED: ${{ inputs.platforms }}
+        run: |
+          enabled=$(yq -o=json -I=0 '[.platforms | to_entries | .[] | select(.value.enabled) | .key]' mozark.yml)
+          if [[ -n "$WANTED" ]]; then
+            enabled=$(jq -c --arg w "$WANTED" '[.[] | select(. as $p | ($w | split(",") | map(gsub(" "; "")) | index($p)))]' <<<"$enabled")
+          fi
+          echo "platforms=$enabled" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="0.0.0-dev.${GITHUB_RUN_NUMBER}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Platforms: $enabled, version: $v"
+
+  build-and-test:
+    needs: plan
+    if: needs.plan.outputs.platforms != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(needs.plan.outputs.platforms) }}
+    runs-on: ${{ matrix.platform == 'ios' && 'macos-latest' || 'ubuntu-latest' }}
+    # One run at a time per platform's device pool: rapid builds queue instead of colliding.
+    concurrency:
+      group: mozark-devices-${{ matrix.platform }}
+      cancel-in-progress: false
+    env:
+      APP_VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- build the app for this platform
+      - name: Set up JDK
+        if: matrix.platform == 'android' || matrix.platform == 'android-tv'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Gradle
+        if: matrix.platform == 'android' || matrix.platform == 'android-tv'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build APK (phone and TV share one APK)
+        if: matrix.platform == 'android' || matrix.platform == 'android-tv'
+        run: |
+          gradle -p apps/android assembleDebug --no-daemon -q
+          mkdir -p out && cp apps/android/app/build/outputs/apk/debug/app-debug.apk "out/cidemo-${APP_VERSION}.apk"
+
+      - name: Package TV web app
+        if: matrix.platform == 'webos' || matrix.platform == 'tizen'
+        run: scripts/package-tv-web.sh "${{ matrix.platform }}" "$APP_VERSION" "$PWD/out"
+
+      - name: iOS build
+        if: matrix.platform == 'ios'
+        run: |
+          echo "::error::iOS build needs signing and a preprod iOS device; enable it in mozark.yml once both exist."
+          exit 2
+
+      - name: Locate build
+        id: build
+        run: |
+          f=$(ls out/*.{apk,ipk,wgt,ipa} 2>/dev/null | head -1)
+          echo "path=$f" >> "$GITHUB_OUTPUT"
+          echo "Build: $f ($(du -h "$f" | cut -f1))"
+
+      # ---- the product piece: test this build on Mozark
+      - name: Test on Mozark
+        id: mozark
+        uses: ./.github/actions/mozark-run
+        with:
+          build-path: ${{ steps.build.outputs.path }}
+          platform: ${{ matrix.platform }}
+          suite: ${{ inputs.suite }}
+          app-version: ${{ needs.plan.outputs.version }}
+          mozark-token: ${{ secrets.MOZARK_TOKEN }}
+          mozark-base-url: ${{ vars.MOZARK_BASE_URL }}
+          mozark-org-id: ${{ vars.MOZARK_ORG_ID }}
+          mozark-app-id: ${{ vars.MOZARK_APP_ID }}
+          mock-scenario: ${{ inputs.mock-scenario || 'pass' }}
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mozark-results-${{ matrix.platform }}
+          path: results/${{ matrix.platform }}
+          if-no-files-found: warn
+
+      - name: Publish JUnit
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: results/${{ matrix.platform }}/junit.xml
+          check_name: Mozark ${{ matrix.platform }}
+          annotate_only: true

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- home -> search -> results -> play. Stable resource-ids for the Studio tests. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView android:id="@+id/screen_title" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:textSize="24sp" android:text="Home" />
+
+    <Button android:id="@+id/open_search" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:text="Search" />
+
+    <EditText android:id="@+id/search_input" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:hint="Search titles"
+        android:inputType="text" android:visibility="gone" />
+
+    <Button android:id="@+id/search_submit" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:text="Go" android:visibility="gone" />
+
+    <TextView android:id="@+id/result_item" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:focusable="true" android:padding="12dp"
+        android:textSize="18sp" android:visibility="gone" />
+
+    <Button android:id="@+id/play_button" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:text="Play" android:visibility="gone" />
+
+    <TextView android:id="@+id/player_status" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:textSize="18sp" android:visibility="gone" />
+</LinearLayout>
